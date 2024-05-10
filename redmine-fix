@@ -1,0 +1,122 @@
+#!/bin/bash -e
+
+info() { echo "INFO: $*"; }
+warning() { echo "WARNING: $*" >&2; }
+fatal() { echo "FATAL: $*" >&2; exit 1; }
+
+status() {
+    desired=$1
+    state=$(systemctl is-active mariadb) || true
+    if [[ "$state" == "failed" ]]; then
+        state=inactive
+	fi
+    if [[ "$state" == "$desired" ]]; then
+        info "mariadb $state - as required"
+    else
+        fatal "mariadb $state - required state: $desired"
+    fi
+}
+
+warning "This script is DESTRUCTIVE - all exisiting MariaDB data will be wiped"
+read -r -p "Type destroy to continue, anything else to exit: " confirm
+if [[ "$confirm" != "destroy" ]]; then
+    fatal "you did not type 'destroy' - exiting"
+else
+    info "Continuing..."
+fi
+echo
+
+info "Checking version"
+if [[ $(turnkey-version) != "turnkey-redmine-18.0-bookworm-amd64" ]]; then
+    fatal "Not running on TurnKey Redmine v18.0 - exiting"
+else
+    info "TurnKey Redmine v18.0 confirmed - continuing"
+fi
+echo
+
+info "Ensuring MariaDB service is not running"
+systemctl stop mariadb
+status inactive
+echo
+
+info "Collecting user input"
+
+while true; do
+    IFS= read -r -s -p "Password for Redmine 'admin' user: " pass1
+    echo
+    IFS= read -r -s -p "Confirm Redmine 'admin' password: " pass2
+    echo
+    if [[ "$pass1" == "$pass2" ]]; then
+        redmine_pass="$pass1"
+        break
+    else
+        warn "Passwords are different, try again"
+    fi
+done
+echo
+read -r -p "Redmine email address: " email
+echo
+while true; do
+    IFS= read -r -s -p "Password for MariaDB 'maraidb_admin' user: " pass1
+    echo
+    IFS= read -r -s -p "Confirm MariaDB 'mariadb_admin' password: " pass2
+    echo
+    if [[ "$pass1" == "$pass2" ]]; then
+        mariadb_pass="$pass1"
+        break
+    else
+        warn "Passwords are different, try again"
+    fi
+done
+echo
+
+info "Nuking MariaDB data, cleaning config & reconfiguring"
+rm -rf /var/lib/mysql
+mkdir /var/lib/mysql
+chown -R mysql:mysql /var/lib/mysql
+sed -i "/^innodb_file_format.*$/d; /^innodb_large_prefix.*$/d" /etc/mysql/conf.d/innodb-barracuda.cnf
+dpkg-reconfigure mariadb-server
+echo
+
+info "Restarting MariaDB & checking that it's running"
+systemctl start mariadb
+status active
+echo
+
+info "Recreating empty Redmine DBs and 'redmine' DB user permssions & password"
+for DB in test development production; do
+    DB_NAME="redmine_$DB"
+    mysqladmin create "$DB_NAME"
+    mysql -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO redmine@localhost IDENTIFIED BY 'temp_password'; FLUSH PRIVILEGES;"
+done
+/usr/lib/inithooks/firstboot.d/20regen-redmine-secrets
+echo
+
+info "Loading Redmine data to DBs"
+cd /var/www/redmine
+RAILS_ENV=production bundle exec rake db:migrate
+RAILS_ENV=production REDMINE_LANG=en bundle exec rake redmine:load_default_data
+echo
+
+info "Resetting Redmine 'admin' user password & email"
+mysql -e "UPDATE redmine_production.users SET must_change_passwd = 0 WHERE id=1;"
+/usr/lib/inithooks/bin/redmine.py --pass="$redmine_pass" --email="$email"
+echo
+
+info "Creating 'mariadb_admin' MariaDB account & setting password for use in Webmin"
+mysql -e "GRANT ALL PRIVILEGES ON *.* TO mariadb_admin@localhost IDENTIFIED BY '$mariadb_pass'; FLUSH PRIVILEGES;"
+/usr/lib/inithooks/bin/mysqlconf.py --user=mariadb_admin --pass="$mariadb_pass"
+conf=/etc/webmin/mysql/config
+if grep -q '^login=' $conf; then
+    sed -i "\|^login=|s|=.*|=mariadb_admin|" $conf
+else
+    echo "login=mariadb_admin" >> $conf
+fi
+if grep -q '^pass=' $conf; then
+    sed -i "\|^pass=|s|=.*|=$mariadb_pass|" $conf
+else
+    echo "pass=$mariadb_pass" >> $conf
+fi
+echo
+
+info "Complete - Access Redmine via user 'admin' and password; and MariaDB via Webmin (password prefilled)"

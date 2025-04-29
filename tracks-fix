@@ -27,10 +27,10 @@ fi
 echo
 
 info "Checking version"
-if [[ $(turnkey-version) != "turnkey-redmine-18.0-bookworm-amd64" ]]; then
-    fatal "Not running on TurnKey Redmine v18.0 - exiting"
+if [[ $(turnkey-version) != "turnkey-tracks-18.0-bookworm-amd64" ]]; then
+    fatal "Not running on TurnKey Tracks v18.0 - exiting"
 else
-    info "TurnKey Redmine v18.0 confirmed - continuing"
+    info "TurnKey Tracks v18.0 confirmed - continuing"
 fi
 echo
 
@@ -42,19 +42,19 @@ echo
 info "Collecting user input"
 
 while true; do
-    IFS= read -r -s -p "Password for Redmine 'admin' user: " pass1
+    IFS= read -r -s -p "Password for Tracks 'admin' user: " pass1
     echo
-    IFS= read -r -s -p "Confirm Redmine 'admin' password: " pass2
+    IFS= read -r -s -p "Confirm Tracks 'admin' password: " pass2
     echo
     if [[ "$pass1" == "$pass2" ]]; then
-        redmine_pass="$pass1"
+        tracks_pass="$pass1"
         break
     else
         warn "Passwords are different, try again"
     fi
 done
 echo
-read -r -p "Redmine email address: " email
+read -r -p "Tracks email address: " email
 echo
 while true; do
     IFS= read -r -s -p "Password for MariaDB 'maraidb_admin' user: " pass1
@@ -83,24 +83,24 @@ systemctl start mariadb
 status active
 echo
 
-info "Recreating empty Redmine DBs and 'redmine' DB user permssions & password"
+info "Recreating empty Tracks DBs and 'tracks' DB user permssions & password"
 for DB in test development production; do
-    DB_NAME="redmine_$DB"
+    DB_NAME="tracks_$DB"
     mysqladmin create "$DB_NAME"
-    mysql -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO redmine@localhost IDENTIFIED BY 'temp_password'; FLUSH PRIVILEGES;"
+    mysql -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO tracks@localhost IDENTIFIED BY 'temp_password'; FLUSH PRIVILEGES;"
 done
-/usr/lib/inithooks/firstboot.d/20regen-redmine-secrets
+/usr/lib/inithooks/firstboot.d/20regen-tracks-secrets
 echo
 
-info "Loading Redmine data to DBs"
-cd /var/www/redmine
+info "Loading Tracks data to DBs"
+cd /var/www/tracks
 RAILS_ENV=production bundle exec rake db:migrate
-RAILS_ENV=production REDMINE_LANG=en bundle exec rake redmine:load_default_data
+RAILS_ENV=production REDMINE_LANG=en bundle exec rake tracks:load_default_data
 echo
 
-info "Resetting Redmine 'admin' user password & email"
-mysql -e "UPDATE redmine_production.users SET must_change_passwd = 0 WHERE id=1;"
-/usr/lib/inithooks/bin/redmine.py --pass="$redmine_pass" --email="$email"
+info "Resetting Tracks 'admin' user password & email"
+mysql -e "UPDATE tracks_production.users SET must_change_passwd = 0 WHERE id=1;"
+/usr/lib/inithooks/bin/tracks.py --pass="$tracks_pass" --email="$email"
 echo
 
 info "Creating 'mariadb_admin' MariaDB account & setting password for use in Webmin"
@@ -119,4 +119,4 @@ else
 fi
 echo
 
-info "Complete - Access Redmine via user 'admin' and password; and MariaDB via Webmin (password prefilled)"
+info "Complete - Access Tracks via user 'admin' and password; and MariaDB via Webmin (password prefilled)"

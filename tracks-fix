@@ -57,7 +57,7 @@ echo
 read -r -p "Tracks email address: " email
 echo
 while true; do
-    IFS= read -r -s -p "Password for MariaDB 'maraidb_admin' user: " pass1
+    IFS= read -r -s -p "Password for MariaDB 'mariadb_admin' user: " pass1
     echo
     IFS= read -r -s -p "Confirm MariaDB 'mariadb_admin' password: " pass2
     echo
@@ -95,11 +95,9 @@ echo
 info "Loading Tracks data to DBs"
 cd /var/www/tracks
 RAILS_ENV=production bundle exec rake db:migrate
-RAILS_ENV=production REDMINE_LANG=en bundle exec rake tracks:load_default_data
 echo
 
 info "Resetting Tracks 'admin' user password & email"
-mysql -e "UPDATE tracks_production.users SET must_change_passwd = 0 WHERE id=1;"
 /usr/lib/inithooks/bin/tracks.py --pass="$tracks_pass" --email="$email"
 echo
 

@@ -1,3 +1,8 @@
+Thanks to @Charsy89 for [fixing](https://github.com/JedMeister/redmine-18.0-fix/pull/2)
+the [bug](https://github.com/JedMeister/redmine-18.0-fix/issues/1) in this script!
+
+---
+
 This is a destructive script to deal with a freshly installed Redmine or
 Tracks appliance which suffers from inital MariaDB database corruption
 on reboot.
